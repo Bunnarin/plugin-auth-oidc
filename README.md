@@ -25,6 +25,8 @@ Unlike standard OIDC providers, Telegram does not provide a standard `userinfo_e
 - It smoothly falls back to extracting the user claims directly from the ID token, preventing the standard `userinfo_endpoint must be configured on the issuer` error.
 - Works out-of-the-box without requiring manual toggles.
 
+side note: the telegram callback data is { id, phone_number }. to make this work with the exisitng phone field, you can bind phone_number to phone, and set phone as the user bind fields. If you want to send message to the user using bot, you must collect the callback's id into a user field (i.e. telegramId) and include the following as scope: 'openid profile phone telegram:bot_access'
+
 ## Configuration
 
 1. Go to your NocoBase Admin Panel -> **Authentication**.
