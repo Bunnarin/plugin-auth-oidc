@@ -92,11 +92,15 @@ export class OIDCAuth extends BaseAuth {
       { exchangeBody: this.getExchangeBody() }
     );
 
-    const userInfo = await client.userinfo(tokens, {
-      method: userInfoMethod,
-      via: accessTokenVia !== 'query' ? accessTokenVia : 'header',
-      params: accessTokenVia === 'query' ? { access_token: tokens.access_token } : {},
-    });
+    let userInfo;
+    if (client.issuer.metadata.issuer.includes('telegram'))
+      userInfo = tokens.claims();
+    else
+      userInfo = await client.userinfo(tokens, {
+        method: userInfoMethod,
+        via: accessTokenVia !== 'query' ? accessTokenVia : 'header',
+        params: accessTokenVia === 'query' ? { access_token: tokens.access_token } : {},
+      });
 
     const mappedUserInfo = this.mapField(userInfo);
     const { nickname, username, name, sub, email, phone } = mappedUserInfo;

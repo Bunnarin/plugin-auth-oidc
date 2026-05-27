@@ -9,7 +9,10 @@ export const redirect = async (ctx: Context, next: Next) => {
   const search = new URLSearchParams(decodeURIComponent(state));
   const authenticator = search.get('name');
   const appName = search.get('app');
-  const redirect = search.get('redirect') || '/admin';
+  let redirect = search.get('redirect');
+  if (!redirect || redirect === 'null' || redirect === 'undefined') {
+    redirect = '/admin';
+  }
   
   let prefix = process.env.APP_PUBLIC_PATH || '';
   if (appName && appName !== 'main') {
