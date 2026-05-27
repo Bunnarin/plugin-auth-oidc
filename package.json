@@ -1,6 +1,6 @@
 {
   "name": "@bunnarin/plugin-auth-oidc",
-  "version": "2.0.55",
+  "version": "1.0.0",
   "main": "dist/server/index.js",
   "dependencies": {
     "nanoid": "3.3.4",
@@ -10,7 +10,6 @@
     "@nocobase/actions": "2.x",
     "@nocobase/auth": "2.x",
     "@nocobase/client": "2.x",
-    "@nocobase/server": "2.x",
-    "@nocobase/test": "2.x"
+    "@nocobase/server": "2.x"
   }
 }

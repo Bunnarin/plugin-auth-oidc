@@ -6,7 +6,7 @@ import { Button, Card, Input, Select, Space, message } from 'antd';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router-dom';
-import { ArrayItems, FormItem, FormTab } from '@formily/antd-v5';
+import { ArrayItems, FormItem, FormTab, Checkbox } from '@formily/antd-v5';
 import { observer } from '@formily/react';
 import { authType } from '../constants';
 
@@ -261,6 +261,13 @@ const schema = {
                               style: { minWidth: 120 },
                             },
                           },
+                          overwrite: {
+                            type: 'boolean',
+                            'x-decorator': 'FormItem',
+                            'x-component': 'Checkbox',
+                            'x-content': '{{t("Overwrite")}}',
+                            default: false,
+                          },
                           remove: {
                             type: 'void',
                             'x-decorator': 'FormItem',
@@ -279,14 +286,15 @@ const schema = {
                   },
                 },
                 userBindField: {
-                  type: 'string',
+                  type: 'array',
                   title: '{{t("Use this field to bind the user")}}',
                   'x-component': 'UserFieldSelect',
                   'x-component-props': {
                     uniqueOnly: true,
+                    mode: 'multiple',
                   },
                   'x-decorator': 'FormItem',
-                  default: 'email',
+                  default: ['email'],
                   required: true,
                 },
               },
@@ -327,6 +335,52 @@ const schema = {
                   description: t(
                     "The state token helps prevent CSRF attacks. It's recommended to leave it blank for automatic random generation."
                   ),
+                },
+                authUrlParams: {
+                  type: 'array',
+                  title: '{{t("Custom query parameters for authorization URL")}}',
+                  'x-decorator': 'FormItem',
+                  'x-component': 'ArrayItems',
+                  items: {
+                    type: 'object',
+                    'x-decorator': 'ArrayItems.Item',
+                    properties: {
+                      space: {
+                        type: 'void',
+                        'x-component': 'Space',
+                        properties: {
+                          key: {
+                            type: 'string',
+                            'x-decorator': 'FormItem',
+                            'x-component': 'Input',
+                            'x-component-props': {
+                              placeholder: '{{t("Key")}}',
+                            },
+                          },
+                          value: {
+                            type: 'string',
+                            'x-decorator': 'FormItem',
+                            'x-component': 'Input',
+                            'x-component-props': {
+                              placeholder: '{{t("Value")}}',
+                            },
+                          },
+                          remove: {
+                            type: 'void',
+                            'x-decorator': 'FormItem',
+                            'x-component': 'ArrayItems.Remove',
+                          },
+                        },
+                      },
+                    },
+                  },
+                  properties: {
+                    add: {
+                      type: 'void',
+                      title: 'Add',
+                      'x-component': 'ArrayItems.Addition',
+                    },
+                  },
                 },
                 exchangeBodyKeys: {
                   type: 'array',
@@ -437,7 +491,7 @@ const AdminSettingsForm = () => {
   return (
     <SchemaComponent
       scope={{ t: translate }}
-      components={{ Usage, ArrayItems, Space, FormTab, UserFieldSelect }}
+      components={{ Usage, ArrayItems, Space, FormTab, UserFieldSelect, Checkbox }}
       schema={schema}
     />
   );

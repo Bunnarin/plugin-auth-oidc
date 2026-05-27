@@ -103,29 +103,60 @@ export class OIDCAuth extends BaseAuth {
       });
 
     const mappedUserInfo = this.mapField(userInfo);
-    const { nickname, username, name, sub, email, phone } = mappedUserInfo;
+    const { username, name, sub, email, phone } = mappedUserInfo;
     const authenticator = this.authenticator as any;
 
     this.ctx.logger.info('OIDC Validation: ', { mappedUserInfo, userBindField: this.getOptions().userBindField });
 
     let user = await authenticator.findUser(sub);
+
+    const updateOverwrittenFields = async (foundUser: any) => {
+      const { fieldMap = [] } = this.getOptions();
+      const updates: any = {};
+      let hasUpdates = false;
+
+      fieldMap.forEach((item: any) => {
+        if (mappedUserInfo[item.target] === undefined)
+          return;
+
+        if ((!item.overwrite && !foundUser.get(item.target)) ||
+          (item.overwrite && foundUser.get(item.target) !== mappedUserInfo[item.target])
+        ) {
+          updates[item.target] = mappedUserInfo[item.target];
+          hasUpdates = true;
+        }
+      });
+
+      if (hasUpdates)
+        await foundUser.update(updates);
+    };
+
     if (user) {
+      await updateOverwrittenFields(user);
       return user;
     }
 
-    const { userBindField = 'email' } = this.getOptions();
-    const bindValue = mappedUserInfo[userBindField];
+    const { userBindField = ['email'] } = this.getOptions();
+    const bindFields = Array.isArray(userBindField) ? userBindField : [userBindField];
+    const orConditions: any[] = [];
 
-    if (bindValue) {
-      user = await this.userRepository.findOne({ filter: { [userBindField]: bindValue } });
-    }
+    bindFields.forEach((field) => {
+      const bindValue = mappedUserInfo[field];
+      if (bindValue) {
+        orConditions.push({ [field]: bindValue });
+      }
+    });
 
-    this.ctx.logger.info('OIDC Found User: ', { user: user ? user.id : null, bindFieldValue: bindValue });
+    if (orConditions.length > 0)
+      user = await this.userRepository.findOne({ filter: { $or: orConditions } });
+
+    this.ctx.logger.info('OIDC Found User: ', { user: user ? user.id : null, bindFields, orConditions });
 
     if (user) {
       await authenticator.addUser(user.id, {
         through: { uuid: sub },
       });
+      await updateOverwrittenFields(user);
       return user;
     }
 
@@ -141,12 +172,7 @@ export class OIDCAuth extends BaseAuth {
       throw new Error(`Username must be 2-16 characters in length (excluding @.<>"'/)`);
     }
 
-    const newUserData: any = {
-      username: username ?? null,
-      nickname: nickname || name || username || sub,
-      email: email ?? null,
-      phone: phone ?? null,
-    };
+    const newUserData: any = { username, email };
 
     const { fieldMap = [] } = this.getOptions();
     fieldMap.forEach((item: any) => {
