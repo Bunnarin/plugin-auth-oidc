@@ -110,13 +110,13 @@ export class OIDCAuth extends BaseAuth {
     }
 
     const { userBindField = 'email' } = this.getOptions();
-    if (userBindField === 'email' && email) {
-      user = await this.userRepository.findOne({ filter: { email } });
-    } else if (userBindField === 'username' && username) {
-      user = await this.userRepository.findOne({ filter: { username } });
+    const bindValue = mappedUserInfo[userBindField];
+
+    if (bindValue) {
+      user = await this.userRepository.findOne({ filter: { [userBindField]: bindValue } });
     }
 
-    this.ctx.logger.info('OIDC Found User: ', { user: user ? user.id : null, email, username });
+    this.ctx.logger.info('OIDC Found User: ', { user: user ? user.id : null, bindFieldValue: bindValue });
 
     if (user) {
       await authenticator.addUser(user.id, {
@@ -127,7 +127,7 @@ export class OIDCAuth extends BaseAuth {
 
     const publicOpts = this.options?.public || {};
     this.ctx.logger.info('OIDC autoSignup check: ', { publicOpts, options: this.options });
-    
+
     if (!publicOpts.autoSignup) {
       throw new Error(`User not found (autoSignup is ${publicOpts.autoSignup})`);
     }
@@ -137,11 +137,20 @@ export class OIDCAuth extends BaseAuth {
       throw new Error(`Username must be 2-16 characters in length (excluding @.<>"'/)`);
     }
 
-    return await authenticator.newUser(sub, {
+    const newUserData: any = {
       username: username ?? null,
       nickname: nickname || name || username || sub,
       email: email ?? null,
       phone: phone ?? null,
+    };
+
+    const { fieldMap = [] } = this.getOptions();
+    fieldMap.forEach((item: any) => {
+      if (item.target && mappedUserInfo[item.target] !== undefined) {
+        newUserData[item.target] = mappedUserInfo[item.target];
+      }
     });
+
+    return await authenticator.newUser(sub, newUserData);
   }
 }

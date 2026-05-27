@@ -2,8 +2,8 @@
 import { css } from '@nocobase/client';
 import { useAPIClient, useApp, i18n, SchemaComponent, Plugin } from '@nocobase/client';
 import { CopyOutlined, LoginOutlined } from '@ant-design/icons';
-import { Button, Card, Input, Space, message } from 'antd';
-import React, { useEffect, useMemo } from 'react';
+import { Button, Card, Input, Select, Space, message } from 'antd';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router-dom';
 import { ArrayItems, FormItem, FormTab } from '@formily/antd-v5';
@@ -90,6 +90,58 @@ const Usage = observer(() => {
   );
 });
 Usage.displayName = 'Usage';
+
+const UserFieldSelect = observer((props: any) => {
+  const { value, onChange, uniqueOnly, ...rest } = props;
+  const api = useAPIClient();
+  const [options, setOptions] = useState<{ label: string; value: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchFields = async () => {
+      try {
+        const res = await api.request({
+          url: 'collections/users/fields:list',
+          params: { paginate: false },
+        });
+        const fields = res?.data?.data || [];
+        const filtered = uniqueOnly
+          ? fields.filter(
+              (f: any) => f.unique || f.primaryKey || ['email', 'username', 'phone'].includes(f.name),
+            )
+          : fields;
+        setOptions(
+          filtered.map((f: any) => ({
+            label: f.uiSchema?.title || f.name,
+            value: f.name,
+          })),
+        );
+      } catch (err) {
+        // Fallback to defaults if API fails
+        setOptions([
+          { label: 'Email', value: 'email' },
+          { label: 'Username', value: 'username' },
+          { label: 'Phone', value: 'phone' },
+        ]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchFields();
+  }, [api, uniqueOnly]);
+
+  return (
+    <Select
+      value={value}
+      onChange={onChange}
+      options={options}
+      loading={loading}
+      placeholder="Select a field"
+      {...rest}
+    />
+  );
+});
+UserFieldSelect.displayName = 'UserFieldSelect';
 
 const schema = {
   type: 'object',
@@ -203,16 +255,11 @@ const schema = {
                           target: {
                             type: 'string',
                             'x-decorator': 'FormItem',
-                            'x-component': 'Select',
+                            'x-component': 'UserFieldSelect',
                             'x-component-props': {
                               placeholder: '{{t("target")}}',
+                              style: { minWidth: 120 },
                             },
-                            enum: [
-                              { label: t('Nickname'), value: 'nickname' },
-                              { label: t('Email'), value: 'email' },
-                              { label: t('Phone'), value: 'phone' },
-                              { label: t('Username'), value: 'username' },
-                            ],
                           },
                           remove: {
                             type: 'void',
@@ -234,13 +281,12 @@ const schema = {
                 userBindField: {
                   type: 'string',
                   title: '{{t("Use this field to bind the user")}}',
-                  'x-component': 'Select',
+                  'x-component': 'UserFieldSelect',
+                  'x-component-props': {
+                    uniqueOnly: true,
+                  },
                   'x-decorator': 'FormItem',
                   default: 'email',
-                  enum: [
-                    { label: t('Email'), value: 'email' },
-                    { label: t('Username'), value: 'username' },
-                  ],
                   required: true,
                 },
               },
@@ -391,7 +437,7 @@ const AdminSettingsForm = () => {
   return (
     <SchemaComponent
       scope={{ t: translate }}
-      components={{ Usage, ArrayItems, Space, FormTab }}
+      components={{ Usage, ArrayItems, Space, FormTab, UserFieldSelect }}
       schema={schema}
     />
   );
