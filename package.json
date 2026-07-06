@@ -1,10 +1,11 @@
 {
   "name": "@bunnarin/plugin-auth-oidc",
-  "version": "1.0.1",
+  "version": "2.0.2",
   "main": "dist/server/index.js",
-  "devDependencies": {
+  "dependencies": {
     "nanoid": "3.3.4",
-    "openid-client": "5.4.2"
+    "openid-client": "5.4.2",
+    "zlib": "1.0.5"
   },
   "peerDependencies": {
     "@nocobase/actions": "2.x",
@@ -17,6 +18,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/bunnarin/nocobase-plugin-auth-oidc"
+    "url": "https://github.com/bunnarin/plugin-auth-oidc"
   }
 }

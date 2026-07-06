@@ -1,6 +1,7 @@
 import { AuthConfig, BaseAuth } from '@nocobase/auth';
 import { Issuer, BaseClient } from 'openid-client';
 import { cookieName } from '../constants';
+import * as zlib from 'zlib';
 
 export class OIDCAuth extends BaseAuth {
   constructor(config: AuthConfig) {
@@ -60,7 +61,31 @@ export class OIDCAuth extends BaseAuth {
 
   async createOIDCClient(): Promise<BaseClient> {
     const { issuer, clientId, clientSecret, idTokenSignedResponseAlg } = this.getOptions();
-    const oidc = await Issuer.discover(issuer);
+    
+    let oidc;
+    try {
+      oidc = await Issuer.discover(issuer);
+    } catch (err: any) {
+      this.ctx.logger.info('OIDC Issuer.discover failed. Attempting manual fetch and gzip decompression...', { issuer, error: err.message });
+      try {
+        const res = await fetch(`${issuer.replace(/\/$/, '')}/.well-known/openid-configuration`);
+        const arrayBuffer = await res.arrayBuffer();
+        const uint8Array = new Uint8Array(arrayBuffer);
+        
+        let jsonText = '';
+        if (uint8Array.length >= 2 && uint8Array[0] === 0x1f && uint8Array[1] === 0x8b) {
+          jsonText = zlib.gunzipSync(uint8Array).toString('utf-8');
+        } else {
+          jsonText = Buffer.from(arrayBuffer).toString('utf-8');
+        }
+        const metadata = JSON.parse(jsonText);
+        oidc = new Issuer(metadata);
+      } catch (fallbackErr: any) {
+        this.ctx.logger.error('OIDC manual fetch fallback also failed', { error: fallbackErr.message });
+        throw err; // throw original error
+      }
+    }
+
     return new oidc.Client({
       client_id: clientId,
       client_secret: clientSecret,
@@ -82,25 +107,72 @@ export class OIDCAuth extends BaseAuth {
     }
 
     const client = await this.createOIDCClient();
-    const tokens = await client.callback(
-      this.getRedirectUri(),
-      {
-        code: values.code,
-        iss: values.iss,
-      },
-      {},
-      { exchangeBody: this.getExchangeBody() }
-    );
+    
+    let tokens;
+    try {
+      tokens = await client.callback(
+        this.getRedirectUri(),
+        { code: values.code, iss: values.iss },
+        {},
+        { exchangeBody: this.getExchangeBody() }
+      );
+    } catch (err: any) {
+      if (err.message && err.message.includes('id_token not present')) {
+        this.ctx.logger.warn('id_token missing, falling back to oauthCallback', { error: err.message });
+        tokens = await client.oauthCallback(
+          this.getRedirectUri(),
+          { code: values.code, iss: values.iss },
+          {},
+          { exchangeBody: this.getExchangeBody() }
+        );
+      } else {
+        throw err;
+      }
+    }
+
+    // Check if the token response itself contains an error (e.g. invalid_grant)
+    if ((tokens as any).error) {
+      throw new Error(`Token exchange failed: ${(tokens as any).error}${(tokens as any).error_description ? ' - ' + (tokens as any).error_description : ''}`);
+    }
 
     let userInfo;
-    if (client.issuer.metadata.issuer.includes('telegram'))
-      userInfo = tokens.claims();
-    else
+    if (client.issuer.metadata.issuer.includes('telegram')) {
+      if (tokens.id_token) {
+        userInfo = tokens.claims();
+      } else {
+        try {
+           if (tokens.access_token && tokens.access_token.split('.').length === 3) {
+             const payload = Buffer.from(tokens.access_token.split('.')[1], 'base64').toString('utf-8');
+             userInfo = JSON.parse(payload);
+           } else if (tokens.sub || tokens.id || tokens.email || tokens.username) {
+             // Claims might be returned directly in the token response root!
+             userInfo = { ...tokens };
+           } else {
+             this.ctx.logger.error('No claims found in Telegram token response', { tokens });
+             // Fallback to userinfo even though it might throw, just in case
+             userInfo = await client.userinfo(tokens, {
+               method: userInfoMethod,
+               via: accessTokenVia !== 'query' ? accessTokenVia : 'header',
+               params: accessTokenVia === 'query' ? { access_token: tokens.access_token } : {},
+             });
+           }
+        } catch (e: any) {
+           this.ctx.logger.error('Failed to get userinfo for telegram fallback', { error: e.message, tokens });
+           // If we still have some identifying info in tokens, use it
+           if (tokens.sub || tokens.email) {
+             userInfo = { ...tokens };
+           } else {
+             throw new Error('Telegram provider did not return an id_token and userinfo failed: ' + e.message);
+           }
+        }
+      }
+    } else {
       userInfo = await client.userinfo(tokens, {
         method: userInfoMethod,
         via: accessTokenVia !== 'query' ? accessTokenVia : 'header',
         params: accessTokenVia === 'query' ? { access_token: tokens.access_token } : {},
       });
+    }
 
     const mappedUserInfo = this.mapField(userInfo);
     const { username, name, sub, email, phone } = mappedUserInfo;

@@ -5,9 +5,9 @@ import { OIDCAuth } from './oidc-auth';
 import { resolve } from 'path';
 
 export class PluginOIDCServer extends Plugin {
-  afterAdd() {}
+  afterAdd() { }
 
-  beforeLoad() {}
+  beforeLoad() { }
 
   async load() {
     this.db.addMigrations({
@@ -35,29 +35,29 @@ export class PluginOIDCServer extends Plugin {
       const url = new URL(req.url, `http://${req.headers.host}`);
       const params = url.searchParams;
       const state = params.get('state');
-      
+
       if (!state) {
         return next();
       }
-      
+
       const search = new URLSearchParams(state);
       const appName = search.get('app');
-      
+
       if (appName) {
         ctx.resolvedAppName = appName;
       }
-      
+
       await next();
     });
   }
 
-  async install(options?: InstallOptions) {}
-
-  async afterEnable() {}
-
-  async afterDisable() {}
-
-  async remove() {}
+  async install() {
+    const { execSync } = require('child_process');
+    const result = execSync('yarn install', {
+      stdio: 'pipe',
+      encoding: 'utf8'
+    });
+  }
 }
 
 export default PluginOIDCServer;

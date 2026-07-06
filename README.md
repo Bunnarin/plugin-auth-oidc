@@ -2,6 +2,11 @@
 
 An enhanced OpenID Connect (OIDC) authentication plugin for NocoBase. This plugin extends the default OIDC capabilities with advanced mapping, dynamic binding, and improved compatibility with various identity providers.
 
+## important
+for some reason nocobase doesn't yarn install for plugin that doesn't start with @nocobase/plugin-. so you'll have to cd into storage/plugins/@bunnarin/plugin-auth-oidc and run yarn install before you can enable it in the plugin manager.
+
+WHEN developing this thing, make sure to set OIDC_REDIRECT_BASE_URL in .env if using cloudflare tunnel or something equivalent. or else nothing works
+
 ## Features
 
 ### 1. Advanced User Binding (Multiple Fields)
