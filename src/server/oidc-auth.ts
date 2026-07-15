@@ -187,26 +187,45 @@ export class OIDCAuth extends BaseAuth {
       const updates: any = {};
       let hasUpdates = false;
 
-      fieldMap.forEach((item: any) => {
+      for (const item of fieldMap) {
         if (mappedUserInfo[item.target] === undefined)
-          return;
+          continue;
 
-        if ((!item.overwrite && !foundUser.get(item.target)) ||
-          (item.overwrite && foundUser.get(item.target) !== mappedUserInfo[item.target])
-        ) {
-          updates[item.target] = mappedUserInfo[item.target];
-          hasUpdates = true;
+        const needsUpdate =
+          (!item.overwrite && !foundUser.get(item.target)) ||
+          (item.overwrite && foundUser.get(item.target) !== mappedUserInfo[item.target]);
+
+        if (!needsUpdate)
+          continue;
+
+        const newValue = mappedUserInfo[item.target];
+
+        // Before updating a unique field, check no other user already owns this value.
+        // This prevents SequelizeUniqueConstraintError when a value was reassigned
+        // from one person to another but the DB constraint fires during the UPDATE.
+        try {
+          const conflict = await this.userRepository.findOne({
+            filter: { [item.target]: newValue },
+          });
+          if (conflict && conflict.id !== foundUser.id) {
+            this.ctx.logger.warn(
+              `OIDC updateOverwrittenFields: skipping field "${item.target}" because value is already owned by user ${conflict.id}`,
+              { field: item.target, value: newValue, foundUserId: foundUser.id, conflictUserId: conflict.id }
+            );
+            continue;
+          }
+        } catch (checkErr: any) {
+          this.ctx.logger.warn(`OIDC updateOverwrittenFields: conflict check failed for field "${item.target}", skipping`, { error: checkErr.message });
+          continue;
         }
-      });
+
+        updates[item.target] = newValue;
+        hasUpdates = true;
+      }
 
       if (hasUpdates)
         await foundUser.update(updates);
     };
-
-    if (user) {
-      await updateOverwrittenFields(user);
-      return user;
-    }
 
     const { userBindField = ['email'] } = this.getOptions();
     const bindFields = Array.isArray(userBindField) ? userBindField : [userBindField];
@@ -218,6 +237,38 @@ export class OIDCAuth extends BaseAuth {
         orConditions.push({ [field]: bindValue });
       }
     });
+
+    if (user) {
+      // Verify the sub-linked user still owns the incoming bind-field values.
+      // If another user now owns them (e.g. phone was transferred), the stale
+      // sub link must be re-pointed to the correct user.
+      if (orConditions.length > 0) {
+        const bindFieldUser = await this.userRepository.findOne({ filter: { $or: orConditions } });
+
+        if (bindFieldUser && bindFieldUser.id !== user.id) {
+          this.ctx.logger.warn(
+            'OIDC: sub is linked to a different user than what bind fields resolve to. Re-linking sub to correct user.',
+            { subUserId: user.id, bindFieldUserId: bindFieldUser.id, bindFields, orConditions }
+          );
+
+          // Detach the sub from the old (stale) user and re-attach to the correct user.
+          try {
+            await this.ctx.db.getRepository('usersAuthenticators').destroy({
+              filter: { authenticator: authenticator.name, userId: user.id, uuid: sub },
+            });
+          } catch (removeErr: any) {
+            this.ctx.logger.warn('OIDC: failed to remove stale sub link', { error: removeErr.message });
+          }
+
+          await authenticator.addUser(bindFieldUser.id, { through: { uuid: sub } });
+          await updateOverwrittenFields(bindFieldUser);
+          return bindFieldUser;
+        }
+      }
+
+      await updateOverwrittenFields(user);
+      return user;
+    }
 
     if (orConditions.length > 0)
       user = await this.userRepository.findOne({ filter: { $or: orConditions } });
